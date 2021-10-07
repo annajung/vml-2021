@@ -431,7 +431,7 @@ The installation process for Kubeflow is the same for all operating systems.
 Deploying the entire Kubeflow stack could be too heavy task for computers with 16 GB RAM or less.
 Depending on the hardware resources, there are two ways to proceed. 
 1. Install the entire Kubeflow
-1. Install just the Pipeline Component of the Kubeflow
+1. Install specific Kubeflow components
 
 Please choose one of the option below based on available resources. 
 
@@ -441,7 +441,8 @@ Please choose one of the option below based on available resources.
 1. Create a directory `workspace` and download Kubeflow release candidate for 1.4.
     ```
     mkdir -p ~/workspace && cd ~/workspace;
-    wget https://github.com/kubeflow/manifests/archive/refs/tags/v1.4.0-rc.1.tar.gz && cd manifests-1.4.0-rc.1
+    wget https://github.com/kubeflow/manifests/archive/refs/tags/v1.4.0-rc.2.tar.gz
+    tar -xvf v1.4.0-rc.2.tar.gz && cd manifests-1.4.0-rc.2/
     ```
 
 1. Install Kubeflow using `kustomize`.
@@ -540,60 +541,85 @@ Please choose one of the option below based on available resources.
 </details>
 
 <details>
-   <summary>Deploy Standalone Kubeflow Pipelines</summary>
+   <summary>Deploy individual Kubeflow Components</summary>
+
+You could deploy all the components below or deploy the components of your interest.
+
+1. Kubeflow Pipelines
    
-1. Deploy the Kubeflow Pipelines by running the following commands:
-   ```
-   export PIPELINE_VERSION=1.7.0
-   kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/cluster-scoped-resources?ref=$PIPELINE_VERSION"
-   kubectl wait --for condition=established --timeout=60s crd/applications.app.k8s.io
-   kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/env/platform-agnostic-pns?ref=$PIPELINE_VERSION"
-   ```
+    1. Deploy the Kubeflow Pipelines by running the following commands:
+       ```
+       export PIPELINE_VERSION=1.7.0
+       kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/cluster-scoped-resources?ref=$PIPELINE_VERSION"
+       kubectl wait --for condition=established --timeout=60s crd/applications.app.k8s.io
+       kubectl apply -k "github.com/kubeflow/pipelines/manifests/kustomize/env/platform-agnostic-pns?ref=$PIPELINE_VERSION"
+       ```
 
-2. Please wait for all pods to show status `Running` before continuing with validation. This could take a few minutes.
+    2. Please wait for all pods to show status `Running` before continuing with validation. This could take a few minutes.
+       ```
+       # Run the following to check status of all pods in kubeflow namespace
+       kubectl get pod --all-namespaces
+       ```
+    
+       Once all pods are running, the output of the above command should look similar to the example provided.
+       <details>
+       <summary>Output Example</summary>
+       
+          ```
+             NAMESPACE            NAME                                               READY   STATUS    RESTARTS   AGE
+          kube-system          coredns-558bd4d5db-469wk                           1/1     Running   0          62m
+          kube-system          coredns-558bd4d5db-fgzsb                           1/1     Running   0          62m
+          kube-system          etcd-stendalone-control-plane                      1/1     Running   0          62m
+          kube-system          kindnet-qsxdr                                      1/1     Running   0          62m
+          kube-system          kube-apiserver-stendalone-control-plane            1/1     Running   0          62m
+          kube-system          kube-controller-manager-stendalone-control-plane   1/1     Running   0          62m
+          kube-system          kube-proxy-fk5sj                                   1/1     Running   0          62m
+          kube-system          kube-scheduler-stendalone-control-plane            1/1     Running   0          62m
+          kubeflow             cache-deployer-deployment-7d87b9bcdc-6fgvg         1/1     Running   0          61m
+          kubeflow             cache-server-856bdbdbc4-ppbdg                      1/1     Running   0          61m
+          kubeflow             metadata-envoy-deployment-6d85d9f7bd-zngkp         1/1     Running   0          61m
+          kubeflow             metadata-grpc-deployment-bd844c9d8-qz68p           1/1     Running   8          61m
+          kubeflow             metadata-writer-7c6b78494f-drcgc                   1/1     Running   3          61m
+          kubeflow             minio-5b65df66c9-wzgz4                             1/1     Running   0          61m
+          kubeflow             ml-pipeline-76d499ffcd-5k25g                       1/1     Running   8          61m
+          kubeflow             ml-pipeline-persistenceagent-77b45fbc7-s4n2p       1/1     Running   5          61m
+          kubeflow             ml-pipeline-scheduledworkflow-78d689554b-twm98     1/1     Running   0          61m
+          kubeflow             ml-pipeline-ui-5d467774b8-kjfjr                    1/1     Running   0          61m
+          kubeflow             ml-pipeline-viewer-crd-7b8c6657bd-wnr65            1/1     Running   0          61m
+          kubeflow             ml-pipeline-visualizationserver-746bd47fd5-gzb74   1/1     Running   0          61m
+          kubeflow             mysql-f7b9b7dd4-n45bx                              1/1     Running   0          61m
+          kubeflow             workflow-controller-7d7d46cf8f-x5gt5               1/1     Running   0          61m
+          local-path-storage   local-path-provisioner-547f784dff-7c9gt            1/1     Running   0          62m
+          ```
+       </details>
+    
+    3. Verify that the Kubeflow Pipelines UI is accessible by port-forwarding:
+       ```
+       kubectl port-forward -n kubeflow svc/ml-pipeline-ui 8080:80
+       ```
+       After running the command, navigate to ```http://localhost:8080``` to login.
+1. Katib
+    1. Deploy the Katib by running the following command:
+    ```
+    kubectl apply -k "github.com/kubeflow/katib.git/manifests/v1beta1/installs/katib-standalone?ref=v0.12.0"
+    ```
+    2. Make sure that all Katib components are running:
+    ```
+   kubectl get pods -n kubeflow
+    NAME                                          READY   STATUS      RESTARTS   AGE
+    iris-experiment-vml-random-675554b9d7-9gkg7   1/1     Running     0          22m
+    katib-cert-generator-6mcqk                    0/1     Completed   0          34m
+    katib-controller-68c47fbf8b-8q28r             1/1     Running     0          34m
+    katib-db-manager-6c948b6b76-9prk5             1/1     Running     1          34m
+    katib-mysql-7894994f88-kclsm                  1/1     Running     0          34m
+    katib-ui-64bb96d5bf-2nmc9                     1/1     Running     0          34m
    ```
-   # Run the following to check status of all pods in kubeflow namespace
-   kubectl get pod --all-namespaces
+   3. Set port-forwarding for the Katib UI service:
+    ```
+   kubectl port-forward svc/katib-ui -n kubeflow 8080:80
    ```
+    After running the command, navigate to http://localhost:8080/katib/ to login.
 
-   Once all pods are running, the output of the above command should look similar to the example provided.
-   <details>
-   <summary>Output Example</summary>
-   
-      ```
-         NAMESPACE            NAME                                               READY   STATUS    RESTARTS   AGE
-      kube-system          coredns-558bd4d5db-469wk                           1/1     Running   0          62m
-      kube-system          coredns-558bd4d5db-fgzsb                           1/1     Running   0          62m
-      kube-system          etcd-stendalone-control-plane                      1/1     Running   0          62m
-      kube-system          kindnet-qsxdr                                      1/1     Running   0          62m
-      kube-system          kube-apiserver-stendalone-control-plane            1/1     Running   0          62m
-      kube-system          kube-controller-manager-stendalone-control-plane   1/1     Running   0          62m
-      kube-system          kube-proxy-fk5sj                                   1/1     Running   0          62m
-      kube-system          kube-scheduler-stendalone-control-plane            1/1     Running   0          62m
-      kubeflow             cache-deployer-deployment-7d87b9bcdc-6fgvg         1/1     Running   0          61m
-      kubeflow             cache-server-856bdbdbc4-ppbdg                      1/1     Running   0          61m
-      kubeflow             metadata-envoy-deployment-6d85d9f7bd-zngkp         1/1     Running   0          61m
-      kubeflow             metadata-grpc-deployment-bd844c9d8-qz68p           1/1     Running   8          61m
-      kubeflow             metadata-writer-7c6b78494f-drcgc                   1/1     Running   3          61m
-      kubeflow             minio-5b65df66c9-wzgz4                             1/1     Running   0          61m
-      kubeflow             ml-pipeline-76d499ffcd-5k25g                       1/1     Running   8          61m
-      kubeflow             ml-pipeline-persistenceagent-77b45fbc7-s4n2p       1/1     Running   5          61m
-      kubeflow             ml-pipeline-scheduledworkflow-78d689554b-twm98     1/1     Running   0          61m
-      kubeflow             ml-pipeline-ui-5d467774b8-kjfjr                    1/1     Running   0          61m
-      kubeflow             ml-pipeline-viewer-crd-7b8c6657bd-wnr65            1/1     Running   0          61m
-      kubeflow             ml-pipeline-visualizationserver-746bd47fd5-gzb74   1/1     Running   0          61m
-      kubeflow             mysql-f7b9b7dd4-n45bx                              1/1     Running   0          61m
-      kubeflow             workflow-controller-7d7d46cf8f-x5gt5               1/1     Running   0          61m
-      local-path-storage   local-path-provisioner-547f784dff-7c9gt            1/1     Running   0          62m
-      ```
-   </details>
-
-
-3. Verify that the Kubeflow Pipelines UI is accessible by port-forwarding:
-   ```
-   kubectl port-forward -n kubeflow svc/ml-pipeline-ui 8080:80
-   ```
-   After running the command, navigate to ```http://localhost:8080``` to login.
 </details>
 
 ## Clean up
