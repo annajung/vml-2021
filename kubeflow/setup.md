@@ -1,8 +1,8 @@
 # Setup Guide
 
 This is a setup guide to install Kubeflow on a local machine. Follow the instructions based on local operating 
- system to get Kubeflow up and running before joining the vGHC OSD workshop **An Illustrated Guide to MLOps using Kubeflow**
- on October 1st 2021.
+ system to get Kubeflow up and running before joining the [VML workshop](https://confluence.eng.vmware.com/display/MLPO/VML2021+Workshop+Week)
+ **What is Kubeflow and What is New in 1.4?** on October 19th 9:30-11:00AM PT.
 
 - [Linux](#linux)
     - [Ubuntu](#ubuntu)
@@ -438,11 +438,11 @@ Please choose one of the option below based on available resources.
 <details>
    <summary>Deploy Kubeflow</summary>
 
-1. Create a directory `workspace` and download Kubeflow release candidate for 1.4.
+1. Create a directory `workspace` and download Kubeflow version 1.4.
     ```
     mkdir -p ~/workspace && cd ~/workspace;
-    wget https://github.com/kubeflow/manifests/archive/refs/tags/v1.4.0-rc.2.tar.gz
-    tar -xvf v1.4.0-rc.2.tar.gz && cd manifests-1.4.0-rc.2/
+    wget https://github.com/kubeflow/manifests/archive/refs/tags/v1.4.0.tar.gz
+    tar -xvf v1.4.0.tar.gz && cd manifests-1.4.0/
     ```
 
 1. Install Kubeflow using `kustomize`.
@@ -630,7 +630,7 @@ You could deploy all the components below or deploy the components of your inter
 1. Run the following commands to uninstall Kubeflow or Kubeflow Pipelines
    - Uninstall Kubeflow installation
    ```
-   cd ~/workspace/manifests-1.4.0-rc.1;
+   cd ~/workspace/manifests-1.4.0;
    kustomize build example | kubectl delete -f -;
    ```
 
