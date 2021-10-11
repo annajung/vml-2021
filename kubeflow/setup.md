@@ -619,7 +619,7 @@ You could deploy all the components below or deploy the components of your inter
    kubectl port-forward svc/katib-ui -n kubeflow 8080:80
    ```
     After running the command, navigate to http://localhost:8080/katib/ to login.
-1. kfserving
+1. Kfserving
     1. Deploy Kfserving and all required components with this command:
     ```
     curl -s "https://raw.githubusercontent.com/kserve/kserve/release-0.6/hack/quick_install.sh" | bash
