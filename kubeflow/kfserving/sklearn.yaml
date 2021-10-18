@@ -1,7 +1,7 @@
 apiVersion: "serving.kserve.io/v1alpha2"
 kind: "InferenceService"
 metadata:
-  name: "sklearn-iris"
+  name: "iris"
   annotations:
     sidecar.istio.io/inject: "false"
 spec:
