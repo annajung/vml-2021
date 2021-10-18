@@ -1,0 +1,1313 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: iris-pipeline-v2-extended-
+  annotations:
+    pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+    pipelines.kubeflow.org/pipeline_compilation_time: '2021-10-18T14:04:10.386806'
+    pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "https://storage.googleapis.com/ml-pipeline-playground/iris-csv-files.tar.gz",
+      "name": "url", "optional": true, "type": "String"}, {"default": "3", "name":
+      "n_neighbors", "optional": true, "type": "Integer"}, {"default": "random", "name":
+      "splitter", "optional": true, "type": "String"}, {"default": "", "name": "pipeline-root"},
+      {"default": "pipeline/iris_pipeline_v2_extended", "name": "pipeline-name"}],
+      "name": "iris_pipeline_v2_extended"}'
+    pipelines.kubeflow.org/v2_pipeline: "true"
+  labels:
+    pipelines.kubeflow.org/v2_pipeline: "true"
+    pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+spec:
+  entrypoint: iris-pipeline-v2-extended
+  templates:
+  - name: condition-knn-1
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-knn-op-model}
+    dag:
+      tasks:
+      - name: save-model-op
+        template: save-model-op
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: train-model-using-knn-op-model, from: '{{inputs.artifacts.train-model-using-knn-op-model}}'}
+  - name: condition-tree-2
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-decision-tree-op-model}
+    dag:
+      tasks:
+      - name: save-model-op-2
+        template: save-model-op-2
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: train-model-using-decision-tree-op-model, from: '{{inputs.artifacts.train-model-using-decision-tree-op-model}}'}
+  - name: confusion-matrix-op
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m
+        pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def confusion_matrix_op(
+                x_test: InputPath(Artifact),
+                y_test: InputPath(Artifact),
+                model: InputPath(Model),
+                metrics: Output[ClassificationMetrics]
+        ):
+            import joblib
+            import pandas as pd
+            from sklearn.metrics import confusion_matrix
+
+            x_test_data = pd.read_csv(x_test, header=None)
+            y_test_data = pd.read_csv(y_test, header=None)
+
+            loaded_model = joblib.load(model)
+            predictions = loaded_model.predict(x_test_data)
+
+            metrics.log_confusion_matrix(
+                ['Setosa', 'Versicolour', 'Virginica'],
+                confusion_matrix(y_test_data, predictions).tolist()
+            )
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - confusion_matrix_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, confusion-matrix-op, --pipeline_name,
+        '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
+        workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
+        $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {}, "inputArtifacts":
+          {"model": {"metadataPath": "/tmp/inputs/model/data", "schemaTitle": "system.Model",
+          "instanceSchema": "", "schemaVersion": "0.0.1"}, "x_test": {"metadataPath":
+          "/tmp/inputs/x_test/data", "schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1"}, "y_test": {"metadataPath": "/tmp/inputs/y_test/data",
+          "schemaTitle": "system.Artifact", "instanceSchema": "", "schemaVersion":
+          "0.0.1"}}, "outputParameters": {}, "outputArtifacts": {"metrics": {"schemaTitle":
+          "system.ClassificationMetrics", "instanceSchema": "", "schemaVersion": "0.0.1",
+          "metadataPath": "/tmp/outputs/metrics/data"}}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-knn-op-model, path: /tmp/inputs/model/data}
+      - {name: preprocess-op-output_x_test_path, path: /tmp/inputs/x_test/data}
+      - {name: preprocess-op-output_y_test_path, path: /tmp/inputs/y_test/data}
+    outputs:
+      artifacts:
+      - {name: confusion-matrix-op-metrics, path: /tmp/outputs/metrics/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: confusion-matrix-op-2
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m
+        pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def confusion_matrix_op(
+                x_test: InputPath(Artifact),
+                y_test: InputPath(Artifact),
+                model: InputPath(Model),
+                metrics: Output[ClassificationMetrics]
+        ):
+            import joblib
+            import pandas as pd
+            from sklearn.metrics import confusion_matrix
+
+            x_test_data = pd.read_csv(x_test, header=None)
+            y_test_data = pd.read_csv(y_test, header=None)
+
+            loaded_model = joblib.load(model)
+            predictions = loaded_model.predict(x_test_data)
+
+            metrics.log_confusion_matrix(
+                ['Setosa', 'Versicolour', 'Virginica'],
+                confusion_matrix(y_test_data, predictions).tolist()
+            )
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - confusion_matrix_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, confusion-matrix-op-2, --pipeline_name,
+        '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
+        workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
+        $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {}, "inputArtifacts":
+          {"model": {"metadataPath": "/tmp/inputs/model/data", "schemaTitle": "system.Model",
+          "instanceSchema": "", "schemaVersion": "0.0.1"}, "x_test": {"metadataPath":
+          "/tmp/inputs/x_test/data", "schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1"}, "y_test": {"metadataPath": "/tmp/inputs/y_test/data",
+          "schemaTitle": "system.Artifact", "instanceSchema": "", "schemaVersion":
+          "0.0.1"}}, "outputParameters": {}, "outputArtifacts": {"metrics": {"schemaTitle":
+          "system.ClassificationMetrics", "instanceSchema": "", "schemaVersion": "0.0.1",
+          "metadataPath": "/tmp/outputs/metrics/data"}}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-decision-tree-op-model, path: /tmp/inputs/model/data}
+      - {name: preprocess-op-output_x_test_path, path: /tmp/inputs/x_test/data}
+      - {name: preprocess-op-output_y_test_path, path: /tmp/inputs/y_test/data}
+    outputs:
+      artifacts:
+      - {name: confusion-matrix-op-2-metrics, path: /tmp/outputs/metrics/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: download-data-kfp-sdk-v2
+    container:
+      args:
+      - sh
+      - -exc
+      - |
+        url="$0"
+        output_path="$1"
+        curl_options="$2"
+        mkdir -p "$(dirname "$output_path")"
+        curl --get "$url" --output "$output_path" $curl_options
+      - '{{$.inputs.parameters[''Url'']}}'
+      - '{{$.outputs.artifacts[''Data''].path}}'
+      - '{{$.inputs.parameters[''curl options'']}}'
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, download-data-kfp-sdk-v2,
+        --pipeline_name, '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID),
+        --run_resource, workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE),
+        --pod_name, $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, 'Url={{inputs.parameters.url}}',
+        curl options=--location, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'byrnedo/alpine-curl@sha256:548379d0a4a0c08b9e55d9d87a592b7d35d9ab3037f4936f5ccd09d0b625a342'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {"Url": {"type": "STRING"},
+          "curl options": {"type": "STRING"}}, "inputArtifacts": {}, "outputParameters":
+          {}, "outputArtifacts": {"Data": {"schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1", "metadataPath": "/tmp/outputs/Data/data"}}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: byrnedo/alpine-curl@sha256:548379d0a4a0c08b9e55d9d87a592b7d35d9ab3037f4936f5ccd09d0b625a342
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      - {name: url}
+    outputs:
+      artifacts:
+      - {name: download-data-kfp-sdk-v2-Data, path: /tmp/outputs/Data/data}
+    metadata:
+      annotations:
+        author: Alexey Volkov <alexey.volkov@ark-kun.com>
+        canonical_location: https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/web/Download/component.yaml
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{"digest": "09826c017aa91ab1e3528e35e2a43774d4db0fd5e38acb8ba6ebafa09ecb95e1",
+          "url": "https://raw.githubusercontent.com/kubeflow/pipelines/master/components/contrib/web/Download/component-sdk-v2.yaml"}'
+        pipelines.kubeflow.org/arguments.parameters: '{"Url": "{{inputs.parameters.url}}",
+          "curl options": "--location"}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: iris-pipeline-v2-extended
+    inputs:
+      parameters:
+      - {name: n_neighbors}
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      - {name: splitter}
+      - {name: url}
+    dag:
+      tasks:
+      - name: condition-knn-1
+        template: condition-knn-1
+        when: '{{tasks.test-model-op.outputs.parameters.test-model-op-Output}} >=
+          {{tasks.test-model-op-2.outputs.parameters.test-model-op-2-Output}}'
+        dependencies: [test-model-op, test-model-op-2, train-model-using-knn-op]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: train-model-using-knn-op-model, from: '{{tasks.train-model-using-knn-op.outputs.artifacts.train-model-using-knn-op-model}}'}
+      - name: condition-tree-2
+        template: condition-tree-2
+        when: '{{tasks.test-model-op-2.outputs.parameters.test-model-op-2-Output}}
+          > {{tasks.test-model-op.outputs.parameters.test-model-op-Output}}'
+        dependencies: [test-model-op, test-model-op-2, train-model-using-decision-tree-op]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: train-model-using-decision-tree-op-model, from: '{{tasks.train-model-using-decision-tree-op.outputs.artifacts.train-model-using-decision-tree-op-model}}'}
+      - name: confusion-matrix-op
+        template: confusion-matrix-op
+        dependencies: [preprocess-op, train-model-using-knn-op]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: preprocess-op-output_x_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_x_test_path}}'}
+          - {name: preprocess-op-output_y_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_y_test_path}}'}
+          - {name: train-model-using-knn-op-model, from: '{{tasks.train-model-using-knn-op.outputs.artifacts.train-model-using-knn-op-model}}'}
+      - name: confusion-matrix-op-2
+        template: confusion-matrix-op-2
+        dependencies: [preprocess-op, train-model-using-decision-tree-op]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: preprocess-op-output_x_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_x_test_path}}'}
+          - {name: preprocess-op-output_y_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_y_test_path}}'}
+          - {name: train-model-using-decision-tree-op-model, from: '{{tasks.train-model-using-decision-tree-op.outputs.artifacts.train-model-using-decision-tree-op-model}}'}
+      - name: download-data-kfp-sdk-v2
+        template: download-data-kfp-sdk-v2
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          - {name: url, value: '{{inputs.parameters.url}}'}
+      - name: preprocess-op
+        template: preprocess-op
+        dependencies: [download-data-kfp-sdk-v2]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: download-data-kfp-sdk-v2-Data, from: '{{tasks.download-data-kfp-sdk-v2.outputs.artifacts.download-data-kfp-sdk-v2-Data}}'}
+      - name: test-model-op
+        template: test-model-op
+        dependencies: [preprocess-op, train-model-using-knn-op]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: preprocess-op-output_x_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_x_test_path}}'}
+          - {name: preprocess-op-output_y_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_y_test_path}}'}
+          - {name: train-model-using-knn-op-model, from: '{{tasks.train-model-using-knn-op.outputs.artifacts.train-model-using-knn-op-model}}'}
+      - name: test-model-op-2
+        template: test-model-op-2
+        dependencies: [preprocess-op, train-model-using-decision-tree-op]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: preprocess-op-output_x_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_x_test_path}}'}
+          - {name: preprocess-op-output_y_test_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_y_test_path}}'}
+          - {name: train-model-using-decision-tree-op-model, from: '{{tasks.train-model-using-decision-tree-op.outputs.artifacts.train-model-using-decision-tree-op-model}}'}
+      - name: train-model-using-decision-tree-op
+        template: train-model-using-decision-tree-op
+        dependencies: [preprocess-op]
+        arguments:
+          parameters:
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          - {name: splitter, value: '{{inputs.parameters.splitter}}'}
+          artifacts:
+          - {name: preprocess-op-output_x_train_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_x_train_path}}'}
+          - {name: preprocess-op-output_y_train_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_y_train_path}}'}
+      - name: train-model-using-knn-op
+        template: train-model-using-knn-op
+        dependencies: [preprocess-op]
+        arguments:
+          parameters:
+          - {name: n_neighbors, value: '{{inputs.parameters.n_neighbors}}'}
+          - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
+          - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
+          artifacts:
+          - {name: preprocess-op-output_x_train_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_x_train_path}}'}
+          - {name: preprocess-op-output_y_train_path, from: '{{tasks.preprocess-op.outputs.artifacts.preprocess-op-output_y_train_path}}'}
+  - name: preprocess-op
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m
+        pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def preprocess_op(
+                tar_data: Input[Artifact],
+                output_x_train_path: OutputPath(Artifact),
+                output_x_test_path: OutputPath(Artifact),
+                output_y_train_path: OutputPath(Artifact),
+                output_y_test_path: OutputPath(Artifact)
+        ):
+            import glob
+            import tarfile
+            import pandas as pd
+            from sklearn.model_selection import train_test_split
+
+            tarfile.open(name=tar_data.path, mode="r|gz").extractall('data')
+            iris = pd.concat(
+                [pd.read_csv(csv_file, header=None)
+                 for csv_file in glob.glob('data/*.csv')])
+
+            X = iris.iloc[:, :-1]
+            y = iris.iloc[:, -1]
+
+            xtrain, xtest, ytrain, ytest = train_test_split(X, y, test_size=0.3)
+
+            xtrain.to_csv(output_x_train_path, index=False, header=False)
+            xtest.to_csv(output_x_test_path, index=False, header=False)
+            ytrain.to_csv(output_y_train_path, index=False, header=False)
+            ytest.to_csv(output_y_test_path, index=False, header=False)
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - preprocess_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, preprocess-op, --pipeline_name,
+        '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
+        workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
+        $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {}, "inputArtifacts":
+          {"tar_data": {"metadataPath": "/tmp/inputs/tar_data/data", "schemaTitle":
+          "system.Artifact", "instanceSchema": "", "schemaVersion": "0.0.1"}}, "outputParameters":
+          {}, "outputArtifacts": {"output_x_test_path": {"schemaTitle": "system.Artifact",
+          "instanceSchema": "", "schemaVersion": "0.0.1", "metadataPath": "/tmp/outputs/output_x_test_path/data"},
+          "output_x_train_path": {"schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1", "metadataPath": "/tmp/outputs/output_x_train_path/data"},
+          "output_y_test_path": {"schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1", "metadataPath": "/tmp/outputs/output_y_test_path/data"},
+          "output_y_train_path": {"schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1", "metadataPath": "/tmp/outputs/output_y_train_path/data"}}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: download-data-kfp-sdk-v2-Data, path: /tmp/inputs/tar_data/data}
+    outputs:
+      artifacts:
+      - {name: preprocess-op-output_x_test_path, path: /tmp/outputs/output_x_test_path/data}
+      - {name: preprocess-op-output_x_train_path, path: /tmp/outputs/output_x_train_path/data}
+      - {name: preprocess-op-output_y_test_path, path: /tmp/outputs/output_y_test_path/data}
+      - {name: preprocess-op-output_y_train_path, path: /tmp/outputs/output_y_train_path/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: save-model-op
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'minio' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3
+        -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'minio' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def save_model_op(
+                model: InputPath(Model),
+                model_name: str
+        ) -> str:
+            import joblib
+            from minio import Minio
+
+            print(model_name)
+
+            loaded_model = joblib.load(model)
+            joblib.dump(loaded_model, "temp.joblib")
+
+            # please dO NOT hardcode your access key and secret key!
+            client = Minio(
+                "minio-service.kubeflow:9000",
+                access_key="minio",
+                secret_key="minio123",
+                secure=False
+            )
+
+            bucket_name = "v2-model"
+            found = client.bucket_exists(bucket_name)
+            if not found:
+                client.make_bucket(bucket_name)
+            else:
+                print("Bucket {} already exists".format(bucket_name))
+
+            client.fput_object(bucket_name, "model.joblib", "./temp.joblib")
+
+            return "s3://{}/{}".format(bucket_name, "model.joblib")
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - save_model_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, save-model-op, --pipeline_name,
+        '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
+        workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
+        $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, model_name=knn, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {"model_name": {"type":
+          "STRING"}}, "inputArtifacts": {"model": {"metadataPath": "/tmp/inputs/model/data",
+          "schemaTitle": "system.Model", "instanceSchema": "", "schemaVersion": "0.0.1"}},
+          "outputParameters": {"Output": {"type": "STRING", "path": "/tmp/outputs/Output/data"}},
+          "outputArtifacts": {}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-knn-op-model, path: /tmp/inputs/model/data}
+    outputs:
+      artifacts:
+      - {name: save-model-op-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+        pipelines.kubeflow.org/arguments.parameters: '{"model_name": "knn"}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: save-model-op-2
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'minio' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3
+        -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'minio' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def save_model_op(
+                model: InputPath(Model),
+                model_name: str
+        ) -> str:
+            import joblib
+            from minio import Minio
+
+            print(model_name)
+
+            loaded_model = joblib.load(model)
+            joblib.dump(loaded_model, "temp.joblib")
+
+            # please dO NOT hardcode your access key and secret key!
+            client = Minio(
+                "minio-service.kubeflow:9000",
+                access_key="minio",
+                secret_key="minio123",
+                secure=False
+            )
+
+            bucket_name = "v2-model"
+            found = client.bucket_exists(bucket_name)
+            if not found:
+                client.make_bucket(bucket_name)
+            else:
+                print("Bucket {} already exists".format(bucket_name))
+
+            client.fput_object(bucket_name, "model.joblib", "./temp.joblib")
+
+            return "s3://{}/{}".format(bucket_name, "model.joblib")
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - save_model_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, save-model-op-2, --pipeline_name,
+        '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
+        workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
+        $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, model_name=tree, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {"model_name": {"type":
+          "STRING"}}, "inputArtifacts": {"model": {"metadataPath": "/tmp/inputs/model/data",
+          "schemaTitle": "system.Model", "instanceSchema": "", "schemaVersion": "0.0.1"}},
+          "outputParameters": {"Output": {"type": "STRING", "path": "/tmp/outputs/Output/data"}},
+          "outputArtifacts": {}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-decision-tree-op-model, path: /tmp/inputs/model/data}
+    outputs:
+      artifacts:
+      - {name: save-model-op-2-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+        pipelines.kubeflow.org/arguments.parameters: '{"model_name": "tree"}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: test-model-op
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m
+        pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def test_model_op(
+                x_test: InputPath(Artifact),
+                y_test: InputPath(Artifact),
+                model: InputPath(Model)
+        ) -> float:
+            import joblib
+            import pandas as pd
+            from sklearn.metrics import accuracy_score
+
+            x_test_data = pd.read_csv(x_test, header=None)
+            y_test_data = pd.read_csv(y_test, header=None)
+
+            loaded_model = joblib.load(model)
+            predictions = loaded_model.predict(x_test_data)
+            accuracy = accuracy_score(y_test_data, predictions)
+            print("accuracy={}".format(accuracy))
+
+            return accuracy.item()
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - test_model_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, test-model-op, --pipeline_name,
+        '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
+        workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
+        $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {}, "inputArtifacts":
+          {"model": {"metadataPath": "/tmp/inputs/model/data", "schemaTitle": "system.Model",
+          "instanceSchema": "", "schemaVersion": "0.0.1"}, "x_test": {"metadataPath":
+          "/tmp/inputs/x_test/data", "schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1"}, "y_test": {"metadataPath": "/tmp/inputs/y_test/data",
+          "schemaTitle": "system.Artifact", "instanceSchema": "", "schemaVersion":
+          "0.0.1"}}, "outputParameters": {"Output": {"type": "DOUBLE", "path": "/tmp/outputs/Output/data"}},
+          "outputArtifacts": {}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-knn-op-model, path: /tmp/inputs/model/data}
+      - {name: preprocess-op-output_x_test_path, path: /tmp/inputs/x_test/data}
+      - {name: preprocess-op-output_y_test_path, path: /tmp/inputs/y_test/data}
+    outputs:
+      parameters:
+      - name: test-model-op-Output
+        valueFrom: {path: /tmp/outputs/Output/data}
+      artifacts:
+      - {name: test-model-op-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: test-model-op-2
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m
+        pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def test_model_op(
+                x_test: InputPath(Artifact),
+                y_test: InputPath(Artifact),
+                model: InputPath(Model)
+        ) -> float:
+            import joblib
+            import pandas as pd
+            from sklearn.metrics import accuracy_score
+
+            x_test_data = pd.read_csv(x_test, header=None)
+            y_test_data = pd.read_csv(y_test, header=None)
+
+            loaded_model = joblib.load(model)
+            predictions = loaded_model.predict(x_test_data)
+            accuracy = accuracy_score(y_test_data, predictions)
+            print("accuracy={}".format(accuracy))
+
+            return accuracy.item()
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - test_model_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, test-model-op-2, --pipeline_name,
+        '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
+        workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
+        $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {}, "inputArtifacts":
+          {"model": {"metadataPath": "/tmp/inputs/model/data", "schemaTitle": "system.Model",
+          "instanceSchema": "", "schemaVersion": "0.0.1"}, "x_test": {"metadataPath":
+          "/tmp/inputs/x_test/data", "schemaTitle": "system.Artifact", "instanceSchema":
+          "", "schemaVersion": "0.0.1"}, "y_test": {"metadataPath": "/tmp/inputs/y_test/data",
+          "schemaTitle": "system.Artifact", "instanceSchema": "", "schemaVersion":
+          "0.0.1"}}, "outputParameters": {"Output": {"type": "DOUBLE", "path": "/tmp/outputs/Output/data"}},
+          "outputArtifacts": {}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: train-model-using-decision-tree-op-model, path: /tmp/inputs/model/data}
+      - {name: preprocess-op-output_x_test_path, path: /tmp/inputs/x_test/data}
+      - {name: preprocess-op-output_y_test_path, path: /tmp/inputs/y_test/data}
+    outputs:
+      parameters:
+      - name: test-model-op-2-Output
+        valueFrom: {path: /tmp/outputs/Output/data}
+      artifacts:
+      - {name: test-model-op-2-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: train-model-using-decision-tree-op
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m
+        pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def train_model_using_decision_tree_op(
+                x_train: InputPath(Artifact),
+                y_train: InputPath(Artifact),
+                splitter: str,
+                model: OutputPath(Model)
+        ):
+            import joblib
+            import pandas as pd
+            from sklearn import tree
+
+            x_train_data = pd.read_csv(x_train, header=None)
+            y_train_data = pd.read_csv(y_train, header=None)
+
+            classifier = tree.DecisionTreeClassifier(splitter=splitter)
+            classifier.fit(x_train_data, y_train_data)
+
+            joblib.dump(classifier, model)
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - train_model_using_decision_tree_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, train-model-using-decision-tree-op,
+        --pipeline_name, '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID),
+        --run_resource, workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE),
+        --pod_name, $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, 'splitter={{inputs.parameters.splitter}}',
+        --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {"splitter": {"type":
+          "STRING"}}, "inputArtifacts": {"x_train": {"metadataPath": "/tmp/inputs/x_train/data",
+          "schemaTitle": "system.Artifact", "instanceSchema": "", "schemaVersion":
+          "0.0.1"}, "y_train": {"metadataPath": "/tmp/inputs/y_train/data", "schemaTitle":
+          "system.Artifact", "instanceSchema": "", "schemaVersion": "0.0.1"}}, "outputParameters":
+          {}, "outputArtifacts": {"model": {"schemaTitle": "system.Model", "instanceSchema":
+          "", "schemaVersion": "0.0.1", "metadataPath": "/tmp/outputs/model/data"}}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      - {name: splitter}
+      artifacts:
+      - {name: preprocess-op-output_x_train_path, path: /tmp/inputs/x_train/data}
+      - {name: preprocess-op-output_y_train_path, path: /tmp/inputs/y_train/data}
+    outputs:
+      artifacts:
+      - {name: train-model-using-decision-tree-op-model, path: /tmp/outputs/model/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+        pipelines.kubeflow.org/arguments.parameters: '{"splitter": "{{inputs.parameters.splitter}}"}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  - name: train-model-using-knn-op
+    container:
+      args:
+      - sh
+      - -c
+      - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m
+        pip install --quiet                 --no-warn-script-location 'pandas>=1.3.3'
+        'scikit-learn' 'kfp==1.8.5' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp -d)
+        printf "%s" "$0" > "$program_path/ephemeral_component.py"
+        python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+      - |2+
+
+        import kfp
+        from kfp.v2 import dsl
+        from kfp.v2.dsl import *
+        from typing import *
+
+        def train_model_using_knn_op(
+                x_train: InputPath(Artifact),
+                y_train: InputPath(Artifact),
+                n_neighbors: int,
+                model: OutputPath(Model)
+        ):
+            import joblib
+            import pandas as pd
+            from sklearn import neighbors
+
+            x_train_data = pd.read_csv(x_train, header=None)
+            y_train_data = pd.read_csv(y_train, header=None)
+
+            classifier = neighbors.KNeighborsClassifier(n_neighbors=n_neighbors)
+            classifier.fit(x_train_data, y_train_data)
+
+            joblib.dump(classifier, model)
+
+      - --executor_input
+      - '{{$}}'
+      - --function_to_execute
+      - train_model_using_knn_op
+      command: [/kfp-launcher/launch, --mlmd_server_address, $(METADATA_GRPC_SERVICE_HOST),
+        --mlmd_server_port, $(METADATA_GRPC_SERVICE_PORT), --runtime_info_json, $(KFP_V2_RUNTIME_INFO),
+        --container_image, $(KFP_V2_IMAGE), --task_name, train-model-using-knn-op,
+        --pipeline_name, '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID),
+        --run_resource, workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE),
+        --pod_name, $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
+        --enable_caching, $(ENABLE_CACHING), --, 'n_neighbors={{inputs.parameters.n_neighbors}}',
+        --]
+      env:
+      - name: KFP_POD_NAME
+        valueFrom:
+          fieldRef: {fieldPath: metadata.name}
+      - name: KFP_POD_UID
+        valueFrom:
+          fieldRef: {fieldPath: metadata.uid}
+      - name: KFP_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+      - name: WORKFLOW_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''workflows.argoproj.io/workflow'']'}
+      - name: KFP_RUN_ID
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipeline/runid'']'}
+      - name: ENABLE_CACHING
+        valueFrom:
+          fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {"n_neighbors": {"type":
+          "INT"}}, "inputArtifacts": {"x_train": {"metadataPath": "/tmp/inputs/x_train/data",
+          "schemaTitle": "system.Artifact", "instanceSchema": "", "schemaVersion":
+          "0.0.1"}, "y_train": {"metadataPath": "/tmp/inputs/y_train/data", "schemaTitle":
+          "system.Artifact", "instanceSchema": "", "schemaVersion": "0.0.1"}}, "outputParameters":
+          {}, "outputArtifacts": {"model": {"schemaTitle": "system.Model", "instanceSchema":
+          "", "schemaVersion": "0.0.1", "metadataPath": "/tmp/outputs/model/data"}}}'}
+      envFrom:
+      - configMapRef: {name: metadata-grpc-configmap, optional: true}
+      image: python:3.9-slim
+      volumeMounts:
+      - {mountPath: /kfp-launcher, name: kfp-launcher}
+    inputs:
+      parameters:
+      - {name: n_neighbors}
+      - {name: pipeline-name}
+      - {name: pipeline-root}
+      artifacts:
+      - {name: preprocess-op-output_x_train_path, path: /tmp/inputs/x_train/data}
+      - {name: preprocess-op-output_y_train_path, path: /tmp/inputs/y_train/data}
+    outputs:
+      artifacts:
+      - {name: train-model-using-knn-op-model, path: /tmp/outputs/model/data}
+    metadata:
+      annotations:
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/component_ref: '{}'
+        pipelines.kubeflow.org/arguments.parameters: '{"n_neighbors": "{{inputs.parameters.n_neighbors}}"}'
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/v2_component: "true"
+        pipelines.kubeflow.org/enable_caching: "true"
+    initContainers:
+    - command: [launcher, --copy, /kfp-launcher/launch]
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
+      name: kfp-launcher
+      mirrorVolumeMounts: true
+    volumes:
+    - {name: kfp-launcher}
+  arguments:
+    parameters:
+    - {name: url, value: 'https://storage.googleapis.com/ml-pipeline-playground/iris-csv-files.tar.gz'}
+    - {name: n_neighbors, value: '3'}
+    - {name: splitter, value: random}
+    - {name: pipeline-root, value: ''}
+    - {name: pipeline-name, value: pipeline/iris_pipeline_v2_extended}
+  serviceAccountName: pipeline-runner

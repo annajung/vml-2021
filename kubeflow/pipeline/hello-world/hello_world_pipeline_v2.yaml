@@ -3,15 +3,16 @@ kind: Workflow
 metadata:
   generateName: hello-world-pipeline-v2-
   annotations:
-    pipelines.kubeflow.org/kfp_sdk_version: 1.8.4
-    pipelines.kubeflow.org/pipeline_compilation_time: '2021-10-07T18:42:22.216695'
-    pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "", "name": "pipeline-root"},
-      {"default": "pipeline/hello-world-pipeline-v2", "name": "pipeline-name"}], "name":
-      "hello-world-pipeline-v2"}'
+    pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+    pipelines.kubeflow.org/pipeline_compilation_time: '2021-10-16T20:10:16.544911'
+    pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "hello world",
+      "name": "message", "optional": true, "type": "String"}, {"default": "", "name":
+      "pipeline-root"}, {"default": "pipeline/hello-world-pipeline-v2", "name": "pipeline-name"}],
+      "name": "hello-world-pipeline-v2"}'
     pipelines.kubeflow.org/v2_pipeline: "true"
   labels:
     pipelines.kubeflow.org/v2_pipeline: "true"
-    pipelines.kubeflow.org/kfp_sdk_version: 1.8.4
+    pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
 spec:
   entrypoint: hello-world-pipeline-v2
   templates:
@@ -21,9 +22,9 @@ spec:
       - sh
       - -c
       - (python3 -m ensurepip || python3 -m ensurepip --user) && (PIP_DISABLE_PIP_VERSION_CHECK=1
-        python3 -m pip install --quiet                 --no-warn-script-location 'kfp==1.8.4'
+        python3 -m pip install --quiet                 --no-warn-script-location 'kfp==1.8.5'
         || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet                 --no-warn-script-location
-        'kfp==1.8.4' --user) && "$0" "$@"
+        'kfp==1.8.5' --user) && "$0" "$@"
       - sh
       - -ec
       - |
@@ -32,11 +33,13 @@ spec:
         python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
       - |2+
 
+        import kfp
+        from kfp.v2 import dsl
         from kfp.v2.dsl import *
         from typing import *
 
-        def echo_op():
-            print("Hello world")
+        def echo_op(message: str):
+            print(message)
 
       - --executor_input
       - '{{$}}'
@@ -48,7 +51,8 @@ spec:
         '{{inputs.parameters.pipeline-name}}', --run_id, $(KFP_RUN_ID), --run_resource,
         workflows.argoproj.io/$(WORKFLOW_ID), --namespace, $(KFP_NAMESPACE), --pod_name,
         $(KFP_POD_NAME), --pod_uid, $(KFP_POD_UID), --pipeline_root, '{{inputs.parameters.pipeline-root}}',
-        --enable_caching, $(ENABLE_CACHING), --, --]
+        --enable_caching, $(ENABLE_CACHING), --, 'message={{inputs.parameters.message}}',
+        --]
       env:
       - name: KFP_POD_NAME
         valueFrom:
@@ -68,30 +72,33 @@ spec:
       - name: ENABLE_CACHING
         valueFrom:
           fieldRef: {fieldPath: 'metadata.labels[''pipelines.kubeflow.org/enable_caching'']'}
-      - {name: KFP_V2_IMAGE, value: 'library/bash:4.4.23'}
-      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {}, "inputArtifacts":
-          {}, "outputParameters": {}, "outputArtifacts": {}}'}
+      - {name: KFP_V2_IMAGE, value: 'python:3.9-slim'}
+      - {name: KFP_V2_RUNTIME_INFO, value: '{"inputParameters": {"message": {"type":
+          "STRING"}}, "inputArtifacts": {}, "outputParameters": {}, "outputArtifacts":
+          {}}'}
       envFrom:
       - configMapRef: {name: metadata-grpc-configmap, optional: true}
-      image: library/bash:4.4.23
+      image: python:3.9-slim
       volumeMounts:
       - {mountPath: /kfp-launcher, name: kfp-launcher}
     inputs:
       parameters:
+      - {name: message}
       - {name: pipeline-name}
       - {name: pipeline-root}
     metadata:
       annotations:
         pipelines.kubeflow.org/v2_component: "true"
         pipelines.kubeflow.org/component_ref: '{}'
+        pipelines.kubeflow.org/arguments.parameters: '{"message": "{{inputs.parameters.message}}"}'
       labels:
-        pipelines.kubeflow.org/kfp_sdk_version: 1.8.4
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
         pipelines.kubeflow.org/pipeline-sdk-type: kfp
         pipelines.kubeflow.org/v2_component: "true"
         pipelines.kubeflow.org/enable_caching: "true"
     initContainers:
     - command: [launcher, --copy, /kfp-launcher/launch]
-      image: gcr.io/ml-pipeline/kfp-launcher:1.8.4
+      image: gcr.io/ml-pipeline/kfp-launcher:1.8.5
       name: kfp-launcher
       mirrorVolumeMounts: true
     volumes:
@@ -99,6 +106,7 @@ spec:
   - name: hello-world-pipeline-v2
     inputs:
       parameters:
+      - {name: message}
       - {name: pipeline-name}
       - {name: pipeline-root}
     dag:
@@ -107,10 +115,12 @@ spec:
         template: echo-op
         arguments:
           parameters:
+          - {name: message, value: '{{inputs.parameters.message}}'}
           - {name: pipeline-name, value: '{{inputs.parameters.pipeline-name}}'}
           - {name: pipeline-root, value: '{{inputs.parameters.pipeline-root}}'}
   arguments:
     parameters:
+    - {name: message, value: hello world}
     - {name: pipeline-root, value: ''}
     - {name: pipeline-name, value: pipeline/hello-world-pipeline-v2}
   serviceAccountName: pipeline-runner

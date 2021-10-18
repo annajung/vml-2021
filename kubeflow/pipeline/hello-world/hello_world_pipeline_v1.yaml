@@ -2,26 +2,38 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: hello-world-pipeline-v1-
-  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.4, pipelines.kubeflow.org/pipeline_compilation_time: '2021-10-07T18:42:16.786867',
-    pipelines.kubeflow.org/pipeline_spec: '{"name": "hello-world-pipeline-v1"}'}
-  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.4}
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.5, pipelines.kubeflow.org/pipeline_compilation_time: '2021-10-16T20:08:15.884208',
+    pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "hello world",
+      "name": "message", "optional": true}], "name": "hello-world-pipeline-v1"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.5}
 spec:
   entrypoint: hello-world-pipeline-v1
   templates:
   - name: echo
     container:
-      args: [echo "hello world"]
+      args: ['echo {{inputs.parameters.message}}']
       command: [sh, -c]
       image: library/bash:4.4.23
+    inputs:
+      parameters:
+      - {name: message}
     metadata:
       labels:
-        pipelines.kubeflow.org/kfp_sdk_version: 1.8.4
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
         pipelines.kubeflow.org/pipeline-sdk-type: kfp
         pipelines.kubeflow.org/enable_caching: "true"
   - name: hello-world-pipeline-v1
+    inputs:
+      parameters:
+      - {name: message}
     dag:
       tasks:
-      - {name: echo, template: echo}
+      - name: echo
+        template: echo
+        arguments:
+          parameters:
+          - {name: message, value: '{{inputs.parameters.message}}'}
   arguments:
-    parameters: []
+    parameters:
+    - {name: message, value: hello world}
   serviceAccountName: pipeline-runner

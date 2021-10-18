@@ -37,6 +37,15 @@ create isolated Python environment is recommended.
 - [iris](./iris)
     - [v1](./iris/iris-v1.py)
     - [v2 compatible](./iris/iris-v2.py)
+    - [v2 compatible extended](./iris/iris-v2-extended.py)
 
-### v2 Compatible Iris Pipeline Outcome
+### Pipelines
+
+#### v1 Iris Pipeline
+![v1 pipeline](./img/v1-iris-pipeline.png)
+
+#### v2 Iris Pipeline
 ![v2 compatible pipeline](./img/v2-compatible-iris-pipeline.png)
+
+##### v2 Iris Pipeline Extended
+![v2 compatible pipeline extended](./img/v2-compatible-iris-pipeline-extended.png)

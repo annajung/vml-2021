@@ -1,18 +1,18 @@
 import kfp
-import kfp.dsl as dsl
+import kfp.v2.dsl as dsl
 from kfp.v2.dsl import (
     component
 )
 
 
-@component(base_image='library/bash:4.4.23')
-def echo_op():
-    print("Hello world")
+@component(base_image='python:3.9-slim')
+def echo_op(message: str):
+    print(message)
 
 
 @dsl.pipeline(name='hello-world-pipeline-v2')
-def hello_world_pipeline_v2():
-    echo_task = echo_op()
+def hello_world_pipeline_v2(message: str = 'hello world'):
+    echo_task = echo_op(message)
 
 
 if __name__ == '__main__':
