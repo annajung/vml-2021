@@ -88,12 +88,23 @@ def test(model_name):
 
 if __name__ == '__main__':
     import sys
+    import argparse
 
-    if sys.argv[1] == "train_tree":
-        train_tree(sys.argv[2])
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--train_algorithm", type=str, default="knn",
+                    help="The training function to be used", choices=["tree", "knn"], required=True)
+
+    ap.add_argument("--n_neighbors", type=int,  default=3,
+                    help="Number of neighbors used in KNN algorithm", required=False)
+
+    ap.add_argument("--splitter", type=str, default="random",
+                    help="The strategy used to choose the split at each node of the Decision Tree. "
+                         "Supported strategies are 'best' and 'random'.", choices=["random", "best"], required=False)
+    args = vars(ap.parse_args())
+
+    if args['train_algorithm'] == "tree":
+        train_tree(args['splitter'])
         test("tree")
     else:
-        train_knn(sys.argv[2])
+        train_knn(args['n_neighbors'])
         test("knn")
-
-

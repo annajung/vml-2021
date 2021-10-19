@@ -23,6 +23,7 @@ spec:
     - feasibleSpace:
         max: "10"
         min: "2"
+        step: "1"
       name: n_neighbors
       parameterType: int
   resumePolicy: LongRunning
@@ -47,8 +48,8 @@ spec:
               - command:
                   - python3
                   - iris.py
-                  - train_knn
-                  - ${trialParameters.n_neighbors}
+                  - '--train_algorithm=knn'
+                  - '--n_neighbors=${trialParameters.n_neighbors}'
                 image: docker.io/atanasovad/iris
                 name: training-container
             restartPolicy: Never
